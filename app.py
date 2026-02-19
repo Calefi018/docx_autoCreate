@@ -39,13 +39,10 @@ def gerar_conteudo_ia(tema_curso, nome_modelo):
     
     modelo = genai.GenerativeModel(nome_modelo)
     
-    # Adicionada instrução restrita para não incluir chaves {} no texto
     prompt = f"""
     Atue como um estudante universitário do curso de {tema_curso}.
     Escreva as respostas para o Desafio Profissional focado no 'Caso Caroline' (Assistente que quer virar Analista, focando em Autorresponsabilidade, 10 Pilares da Vida, e Metas SMART).
     As respostas devem ser originais, sem plágio, mas seguindo a linha teórica de Paulo Vieira e Gestão de Carreiras.
-    
-    ATENÇÃO MÁXIMA: Retorne apenas o texto limpo nas respostas. NUNCA coloque o seu texto dentro de chaves {{ }} ou colchetes [ ].
     
     Retorne APENAS um objeto JSON válido, contendo exatamente as chaves abaixo com seus respectivos textos gerados. Não adicione markdown como ```json. Apenas as chaves e os textos.
     
@@ -73,7 +70,17 @@ def gerar_conteudo_ia(tema_curso, nome_modelo):
         resposta = modelo.generate_content(prompt)
         texto_limpo = resposta.text.strip().replace("```json", "").replace("```", "")
         dicionario_dados = json.loads(texto_limpo)
-        return dicionario_dados
+        
+        # --- FILTRO PYTHON DE LIMPEZA NATIVA ---
+        # Força a retirada de qualquer chave/colchete que a IA tenha colocado no texto gerado
+        dicionario_higienizado = {}
+        for chave_marcador, texto_gerado in dicionario_dados.items():
+            if isinstance(texto_gerado, str):
+                texto_gerado = texto_gerado.replace("{", "").replace("}", "").replace("[", "").replace("]", "")
+            dicionario_higienizado[chave_marcador] = texto_gerado
+            
+        return dicionario_higienizado
+        
     except Exception as e:
         st.error(f"Erro da IA ({nome_modelo}): {e}")
         return None
@@ -86,8 +93,6 @@ st.set_page_config(page_title="Gerador de Desafio Profissional", page_icon="📄
 st.title("Gerador de Trabalhos - Caso Caroline 📄")
 st.write("Gere trabalhos originais mantendo a formatação do template.")
 
-# --- NOVIDADE: MEMÓRIA DE SESSÃO (SESSION STATE) ---
-# Isso impede que o botão de download suma após ser clicado
 if "arquivo_pronto" not in st.session_state:
     st.session_state.arquivo_pronto = None
 if "nome_arquivo" not in st.session_state:
@@ -116,18 +121,15 @@ if modelos_disponiveis:
                     try:
                         preencher_template("TEMPLATE_COM_TAGS.docx", arquivo_saida, dados_gerados)
                         
-                        # Salva o arquivo e o nome na memória da página
                         st.session_state.arquivo_pronto = arquivo_saida.getvalue()
                         st.session_state.nome_arquivo = f"Desafio_Caroline_{curso_alvo}.docx"
                         
-                        st.success("✅ Documento gerado com sucesso!")
+                        st.success("✅ Documento gerado e limpo com sucesso!")
                     except Exception as e:
                         st.error(f"Erro ao montar o Word: {e}")
         else:
             st.warning("⚠️ Digite o nome do curso.")
             
-    # O botão de download agora fica FORA do comando de gerar, 
-    # garantindo que ele não suma ao ser clicado!
     if st.session_state.arquivo_pronto is not None:
         st.download_button(
             label="⬇️ Baixar Trabalho Pronto (.docx)",
