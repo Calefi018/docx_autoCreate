@@ -3,8 +3,9 @@ from docx import Document
 import google.generativeai as genai
 import io
 import json
+import time
 
-# Segurança: A chave é puxada do painel do Streamlit, não fica exposta no código.
+# Segurança: A chave é puxada do painel do Streamlit de forma invisível
 CHAVE_API = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=CHAVE_API)
 
@@ -36,9 +37,10 @@ def preencher_template(caminho_template, caminho_saida, dicionario_dados):
 
 def gerar_conteudo_ia(tema_curso):
     """Solicita à IA que gere o conteúdo único em formato JSON compatível com as tags."""
-    modelo = genai.GenerativeModel("gemini-pro")
     
-    # Prompt detalhado para garantir que a IA devolva as respostas certas sem plágio
+    # Utilizando a versão Pro mais recente habilitada para cotas gratuitas
+    modelo = genai.GenerativeModel("gemini-1.5-pro-latest")
+    
     prompt = f"""
     Atue como um estudante universitário do curso de {tema_curso}.
     Escreva as respostas para o Desafio Profissional focado no 'Caso Caroline' (Assistente que quer virar Analista, focando em Autorresponsabilidade, 10 Pilares da Vida, e Metas SMART).
@@ -53,6 +55,7 @@ def gerar_conteudo_ia(tema_curso):
         "{{POR_QUE_2}}": "justificativa do aspecto 2",
         "{{ASPECTO_3}}": "texto curto do aspecto 3",
         "{{POR_QUE_3}}": "justificativa do aspecto 3",
+        "{{CONCEITOS_TEORICOS}}": "Lista comentada de 4 conceitos teóricos (Autorresponsabilidade, 10 Pilares, Estado Atual x Desejado, Metas SMART) com definição curta e como ajudam no caso.",
         "{{RESP_AUTORRESP}}": "Como a autorresponsabilidade explica o caso...",
         "{{RESP_PILARES}}": "Como os 10 pilares explicam o caso...",
         "{{RESP_SOLUCOES}}": "Que soluções o planejamento aponta...",
@@ -71,7 +74,8 @@ def gerar_conteudo_ia(tema_curso):
         dicionario_dados = json.loads(texto_limpo)
         return dicionario_dados
     except Exception as e:
-        st.error(f"Erro ao gerar ou formatar o conteúdo com a IA. Detalhes: {e}")
+        # Se der erro 429, avisa o usuário sobre a cota de limite de tempo
+        st.error(f"Erro ao gerar conteúdo. Se for um Erro 429 (Quota Exceeded), aguarde 1 minuto e tente novamente. Detalhes: {e}")
         return None
 
 # ---------------------------------------------------------
@@ -81,27 +85,24 @@ st.set_page_config(page_title="Gerador de Desafio Profissional", page_icon="📄
 
 st.title("Gerador de Trabalhos - Caso Caroline 📄")
 st.write("Insira o curso alvo para gerar um trabalho totalmente original e sem plágio, mantendo a formatação padrão da faculdade.")
+st.caption("Aviso: A versão Pro gratuita permite cerca de 2 gerações por minuto. Caso ocorra erro, aguarde alguns segundos antes de tentar novamente.")
 
 curso_alvo = st.text_input("Qual o curso? (Ex: Administração, Logística, Marketing)")
 
 if st.button("Gerar Documento Word", type="primary"):
     if curso_alvo:
-        with st.spinner("Conectando à IA e redigindo o trabalho... (Isso pode levar alguns segundos)"):
+        with st.spinner("Conectando à IA Pro e redigindo o trabalho... (Isso pode levar alguns segundos)"):
             
-            # Gera os dados únicos com a IA
             dados_gerados = gerar_conteudo_ia(curso_alvo)
             
             if dados_gerados:
-                # Cria um arquivo em memória para download direto no navegador
                 arquivo_saida = io.BytesIO()
                 
                 try:
-                    # Aplica as variáveis no template do Word
                     preencher_template("TEMPLATE_COM_TAGS.docx", arquivo_saida, dados_gerados)
                     
                     st.success("✅ Documento gerado com sucesso!")
                     
-                    # Disponibiliza o download do arquivo preenchido
                     st.download_button(
                         label="⬇️ Baixar Trabalho Pronto (.docx)",
                         data=arquivo_saida.getvalue(),
