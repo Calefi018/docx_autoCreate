@@ -36,7 +36,7 @@ def preencher_template(caminho_template, caminho_saida, dicionario_dados):
 
 def gerar_conteudo_ia(tema_curso):
     """Solicita à IA que gere o conteúdo único em formato JSON compatível com as tags."""
-    modelo = genai.GenerativeModel("gemini-2.5-pro")
+    modelo = genai.GenerativeModel("gemini-pro")
     
     # Prompt detalhado para garantir que a IA devolva as respostas certas sem plágio
     prompt = f"""
