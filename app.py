@@ -3,9 +3,8 @@ from docx import Document
 import google.generativeai as genai
 import io
 import json
-import time
 
-# Segurança: A chave é puxada do painel do Streamlit de forma invisível
+# Puxa a chave de forma segura
 CHAVE_API = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=CHAVE_API)
 
@@ -35,11 +34,10 @@ def preencher_template(caminho_template, caminho_saida, dicionario_dados):
     doc.save(caminho_saida)
 # ---------------------------------------------------------
 
-def gerar_conteudo_ia(tema_curso):
-    """Solicita à IA que gere o conteúdo único em formato JSON compatível com as tags."""
+def gerar_conteudo_ia(tema_curso, nome_modelo):
+    """Gera o conteúdo usando o modelo dinâmico selecionado pelo usuário."""
     
-    # Utilizando a versão Pro mais recente habilitada para cotas gratuitas
-    modelo = genai.GenerativeModel("gemini-1.5-flash")
+    modelo = genai.GenerativeModel(nome_modelo)
     
     prompt = f"""
     Atue como um estudante universitário do curso de {tema_curso}.
@@ -74,8 +72,7 @@ def gerar_conteudo_ia(tema_curso):
         dicionario_dados = json.loads(texto_limpo)
         return dicionario_dados
     except Exception as e:
-        # Se der erro 429, avisa o usuário sobre a cota de limite de tempo
-        st.error(f"Erro ao gerar conteúdo. Se for um Erro 429 (Quota Exceeded), aguarde 1 minuto e tente novamente. Detalhes: {e}")
+        st.error(f"Erro da IA ({nome_modelo}): {e}")
         return None
 
 # ---------------------------------------------------------
@@ -84,32 +81,44 @@ def gerar_conteudo_ia(tema_curso):
 st.set_page_config(page_title="Gerador de Desafio Profissional", page_icon="📄")
 
 st.title("Gerador de Trabalhos - Caso Caroline 📄")
-st.write("Insira o curso alvo para gerar um trabalho totalmente original e sem plágio, mantendo a formatação padrão da faculdade.")
-st.caption("Aviso: A versão Pro gratuita permite cerca de 2 gerações por minuto. Caso ocorra erro, aguarde alguns segundos antes de tentar novamente.")
+st.write("Gere trabalhos originais mantendo a formatação do template.")
 
-curso_alvo = st.text_input("Qual o curso? (Ex: Administração, Logística, Marketing)")
+# --- NOVIDADE: CAÇADOR DE MODELOS ---
+modelos_disponiveis = []
+try:
+    # Pergunta pro Google quais modelos sua chave tem acesso
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            modelos_disponiveis.append(m.name.replace('models/', ''))
+except Exception as e:
+    st.error("Erro ao conectar com a API do Google. Verifique sua chave.")
 
-if st.button("Gerar Documento Word", type="primary"):
-    if curso_alvo:
-        with st.spinner("Conectando à IA Pro e redigindo o trabalho... (Isso pode levar alguns segundos)"):
-            
-            dados_gerados = gerar_conteudo_ia(curso_alvo)
-            
-            if dados_gerados:
-                arquivo_saida = io.BytesIO()
+if modelos_disponiveis:
+    # Cria o menu suspenso. Se der erro em um, você só escolhe outro na lista!
+    modelo_escolhido = st.selectbox("Selecione o motor da IA (Recomendado: escolha os que terminam em 'flash'):", modelos_disponiveis)
+    
+    curso_alvo = st.text_input("Qual o curso? (Ex: Administração, Logística, Marketing)")
+
+    if st.button("Gerar Documento Word", type="primary"):
+        if curso_alvo:
+            with st.spinner(f"Gerando trabalho com {modelo_escolhido}..."):
                 
-                try:
-                    preencher_template("TEMPLATE_COM_TAGS.docx", arquivo_saida, dados_gerados)
-                    
-                    st.success("✅ Documento gerado com sucesso!")
-                    
-                    st.download_button(
-                        label="⬇️ Baixar Trabalho Pronto (.docx)",
-                        data=arquivo_saida.getvalue(),
-                        file_name=f"Desafio_Caroline_{curso_alvo}.docx",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
-                except Exception as e:
-                    st.error(f"Erro ao processar o arquivo Word. Verifique se o TEMPLATE_COM_TAGS.docx está no GitHub. Erro: {e}")
-    else:
-        st.warning("⚠️ Por favor, digite o nome do curso antes de gerar.")
+                dados_gerados = gerar_conteudo_ia(curso_alvo, modelo_escolhido)
+                
+                if dados_gerados:
+                    arquivo_saida = io.BytesIO()
+                    try:
+                        preencher_template("TEMPLATE_COM_TAGS.docx", arquivo_saida, dados_gerados)
+                        st.success("✅ Documento gerado com sucesso!")
+                        st.download_button(
+                            label="⬇️ Baixar Trabalho Pronto (.docx)",
+                            data=arquivo_saida.getvalue(),
+                            file_name=f"Desafio_Caroline_{curso_alvo}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
+                    except Exception as e:
+                        st.error(f"Erro ao montar o Word: {e}")
+        else:
+            st.warning("⚠️ Digite o nome do curso.")
+else:
+    st.error("Nenhum modelo compatível encontrado para esta chave API.")
