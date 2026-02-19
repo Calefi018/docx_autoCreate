@@ -39,7 +39,7 @@ def gerar_conteudo_ia(tema_curso):
     """Solicita à IA que gere o conteúdo único em formato JSON compatível com as tags."""
     
     # Utilizando a versão Pro mais recente habilitada para cotas gratuitas
-    modelo = genai.GenerativeModel("gemini-1.5-pro-latest")
+    modelo = genai.GenerativeModel("gemini-1.5-flash")
     
     prompt = f"""
     Atue como um estudante universitário do curso de {tema_curso}.
