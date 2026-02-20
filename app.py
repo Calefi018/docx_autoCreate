@@ -2,101 +2,93 @@ import streamlit as st
 from docx import Document
 import google.generativeai as genai
 import io
-import json
 
 # Puxa a chave de forma segura
 CHAVE_API = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=CHAVE_API)
 
 # ---------------------------------------------------------
-# FUNÇÃO DE PREENCHIMENTO (ESTRUTURA MANTIDA INTACTA)
+# FUNÇÕES DE LEITURA E ESCRITA DE WORD
 # ---------------------------------------------------------
-def preencher_template(caminho_template, caminho_saida, dicionario_dados):
-    """
-    Lê um template Word, substitui os marcadores e salva um novo arquivo
-    sem alterar a estrutura original.
-    """
-    doc = Document(caminho_template)
-
+def extrair_texto_docx(arquivo_upload):
+    """Lê o arquivo Word enviado pelo usuário e extrai todo o texto."""
+    doc = Document(arquivo_upload)
+    texto_completo = []
     for paragrafo in doc.paragraphs:
-        for marcador, texto_novo in dicionario_dados.items():
-            if marcador in paragrafo.text:
-                paragrafo.text = paragrafo.text.replace(marcador, texto_novo)
+        if paragrafo.text.strip():
+            texto_completo.append(paragrafo.text)
+    return "\n".join(texto_completo)
 
-    for tabela in doc.tables:
-        for linha in tabela.rows:
-            for celula in linha.cells:
-                for paragrafo in celula.paragraphs:
-                    for marcador, texto_novo in dicionario_dados.items():
-                        if marcador in paragrafo.text:
-                            paragrafo.text = paragrafo.text.replace(marcador, texto_novo)
-
-    doc.save(caminho_saida)
-# ---------------------------------------------------------
-
-# ---------------------------------------------------------
-# FUNÇÃO DE IA COM O NOVO FILTRO ANTI-CHAVES
-# ---------------------------------------------------------
-def gerar_conteudo_ia(tema_curso, nome_modelo):
-    """Gera o conteúdo usando o modelo dinâmico selecionado pelo usuário."""
+def criar_gabarito_word(texto_ia):
+    """Cria um novo documento Word formatando o texto gerado pela IA (negritos e parágrafos)."""
+    doc = Document()
+    doc.add_heading('Gabarito Gerado - Desafio Profissional', level=1)
     
+    linhas = texto_ia.split('\n')
+    for linha in linhas:
+        linha = linha.strip()
+        if not linha:
+            continue
+            
+        # Lógica simples para aplicar negrito onde a IA usou **texto**
+        p = doc.add_paragraph()
+        partes = linha.split('**')
+        
+        for i, parte in enumerate(partes):
+            if i % 2 == 1: # Ímpares são os textos que estavam entre ** **
+                p.add_run(parte).bold = True
+            else:
+                p.add_run(parte)
+                
+    arquivo_saida = io.BytesIO()
+    doc.save(arquivo_saida)
+    return arquivo_saida.getvalue()
+
+# ---------------------------------------------------------
+# FUNÇÃO DE IA PARA LER TEMPLATE + TEMA E GERAR RESPOSTA
+# ---------------------------------------------------------
+def gerar_resolucao_inteligente(texto_template, texto_tema, nome_modelo):
+    """Envia o template E o tema descritivo para a IA interpretar e resolver."""
     modelo = genai.GenerativeModel(nome_modelo)
     
-    # PROMPT BLINDADO: Sem chaves nas variáveis para a IA não copiar o padrão
     prompt = f"""
-    Atue como um estudante universitário do curso de {tema_curso}.
-    Escreva as respostas para o Desafio Profissional focado no 'Caso Caroline' (Assistente que quer virar Analista, focando em Autorresponsabilidade, 10 Pilares da Vida, e Metas SMART).
-    As respostas devem ser originais, sem plágio, mas seguindo a linha teórica de Paulo Vieira e Gestão de Carreiras.
+    Você é um especialista acadêmico ajudando um estudante universitário a resolver um Desafio Profissional.
     
-    REGRA DE OURO: Retorne APENAS o texto limpo nas respostas. NUNCA use formatação Markdown (como **negrito** ou listas com *).
+    Vou te fornecer duas informações cruciais:
+    1. A DESCRIÇÃO DO TEMA/CASO que precisa ser resolvido.
+    2. O TEXTO DO TEMPLATE PADRÃO ÚNICO, que dita a estrutura das Etapas (1 a 5) que você deve preencher.
     
-    Retorne APENAS um objeto JSON válido, contendo exatamente as chaves abaixo (SEM CHAVES DUPLAS). Não adicione markdown como ```json. Apenas as chaves e os textos.
+    Sua tarefa é gerar todas as respostas passo a passo, de forma original e sem plágio, resolvendo o caso apresentado.
+    Me informe claramente onde preencher as informações no Word (Ex: "Na Etapa 2 (Materiais de referência), escreva isso...").
     
-    {{
-        "ASPECTO_1": "texto curto do aspecto 1",
-        "POR_QUE_1": "justificativa do aspecto 1",
-        "ASPECTO_2": "texto curto do aspecto 2",
-        "POR_QUE_2": "justificativa do aspecto 2",
-        "ASPECTO_3": "texto curto do aspecto 3",
-        "POR_QUE_3": "justificativa do aspecto 3",
-        "CONCEITOS_TEORICOS": "Lista comentada de 4 conceitos teóricos com definição curta e como ajudam no caso.",
-        "RESP_AUTORRESP": "Como a autorresponsabilidade explica o caso...",
-        "RESP_PILARES": "Como os 10 pilares explicam o caso...",
-        "RESP_SOLUCOES": "Que soluções o planejamento aponta...",
-        "RESUMO_MEMORIAL": "Resumo do memorial analítico...",
-        "CONTEXTO_MEMORIAL": "Contextualização do desafio...",
-        "ANALISE_MEMORIAL": "Análise usando as teorias...",
-        "PROPOSTAS_MEMORIAL": "Propostas de solução...",
-        "CONCLUSAO_MEMORIAL": "Conclusão reflexiva...",
-        "AUTOAVALIACAO_MEMORIAL": "Autoavaliação do processo de estudo..."
-    }}
+    REGRA OBRIGATÓRIA PARA A ETAPA 5 (MEMORIAL ANALÍTICO):
+    Você deve redigir a Etapa 5 seguindo estritamente o padrão abaixo. Escreva os títulos em **negrito**:
+    
+    **Resumo:** [Escreva 1 parágrafo resumindo o que descobriu]
+    **Contextualização do desafio:** [Escreva 1 parágrafo: Quem? Onde? Qual a situação?]
+    **Análise:** [Escreva 1 parágrafo usando de 2 a 3 conceitos da disciplina, com exemplos]
+    **Propostas de solução:** [Escreva de 1 a 2 parágrafos com recomendações e teorias que as apoiam]
+    **Conclusão reflexiva:** [Escreva de 1 a 2 parágrafos sobre o que foi aprendido]
+    **Referências:** [Liste as referências em formato ABNT, incluindo o livro base da disciplina se mencionado no tema]
+    **Autoavaliação:** [Escreva 1 parágrafo sobre o processo de estudo]
+    
+    Checklist que você deve respeitar:
+    - O texto total da Etapa 5 NÃO pode passar de 6000 caracteres.
+    - Os conceitos devem fazer sentido e conectar teoria e situação.
+    - Apresentar soluções plausíveis.
+    
+    =========================================
+    DESCRIÇÃO DO TEMA/CASO (O problema a ser resolvido):
+    {texto_tema}
+    
+    =========================================
+    TEXTO DO TEMPLATE (A estrutura a ser preenchida):
+    {texto_template}
     """
     
     try:
         resposta = modelo.generate_content(prompt)
-        texto_limpo = resposta.text.strip().replace("```json", "").replace("```", "")
-        dicionario_dados = json.loads(texto_limpo)
-        
-        # --- NOVO FILTRO E RECONSTRUÇÃO DE VARIÁVEIS ---
-        dicionario_higienizado = {}
-        for chave, texto_gerado in dicionario_dados.items():
-            
-            # 1. Limpa o texto gerado (o valor) de qualquer sujeira e chaves duplas
-            if isinstance(texto_gerado, str):
-                texto_gerado = texto_gerado.replace("{{", "").replace("}}", "").replace("{", "").replace("}", "").replace("[", "").replace("]", "").replace("*", "").strip()
-            else:
-                texto_gerado = str(texto_gerado)
-                
-            # 2. Limpa a chave original do JSON
-            chave_limpa = chave.replace("{", "").replace("}", "").strip()
-            
-            # 3. Monta o marcador garantindo que terá EXATAMENTE duas chaves.
-            chave_marcador = f"{{{{{chave_limpa}}}}}"
-            
-            dicionario_higienizado[chave_marcador] = texto_gerado
-            
-        return dicionario_higienizado
-        
+        return resposta.text
     except Exception as e:
         st.error(f"Erro da IA ({nome_modelo}): {e}")
         return None
@@ -104,16 +96,18 @@ def gerar_conteudo_ia(tema_curso, nome_modelo):
 # ---------------------------------------------------------
 # INTERFACE DO SITE (STREAMLIT)
 # ---------------------------------------------------------
-st.set_page_config(page_title="Gerador de Desafio Profissional", page_icon="📄")
+st.set_page_config(page_title="Gerador Automático de Trabalhos", page_icon="🎓")
 
-st.title("Gerador de Trabalhos - Caso Caroline 📄")
-st.write("Gere trabalhos originais mantendo a formatação do template.")
+st.title("Gerador Universal - Desafio Profissional 🎓")
+st.write("Anexe o template padrão e cole as instruções do portal. A IA fará o resto!")
 
-if "arquivo_pronto" not in st.session_state:
-    st.session_state.arquivo_pronto = None
-if "nome_arquivo" not in st.session_state:
-    st.session_state.nome_arquivo = ""
+# Variáveis de estado
+if "gabarito_pronto" not in st.session_state:
+    st.session_state.gabarito_pronto = None
+if "texto_tela" not in st.session_state:
+    st.session_state.texto_tela = ""
 
+# Lista modelos
 modelos_disponiveis = []
 try:
     for m in genai.list_models():
@@ -123,36 +117,48 @@ except Exception as e:
     st.error("Erro ao conectar com a API do Google. Verifique sua chave.")
 
 if modelos_disponiveis:
-    modelo_escolhido = st.selectbox("Selecione o motor da IA (Recomendado: escolha os que terminam em 'flash'):", modelos_disponiveis)
-    curso_alvo = st.text_input("Qual o curso? (Ex: Administração, Logística, Marketing)")
+    modelo_escolhido = st.selectbox("Selecione a IA:", modelos_disponiveis, index=0)
+    
+    # 1. Upload do Arquivo
+    arquivo_upload = st.file_uploader("1. Faça o upload do Template Padrão (.docx)", type=["docx"])
+    
+    # 2. Caixa de texto para o Tema
+    tema_desafio = st.text_area(
+        "2. Cole aqui o Tema/Descrição do Desafio (copiado do portal)", 
+        height=250, 
+        placeholder="Cole aqui o texto inteiro do desafio (ex: Você é responsável por coordenar a implantação de tecnologias emergentes em uma obra...)"
+    )
 
-    if st.button("Gerar Documento Word", type="primary"):
-        if curso_alvo:
-            with st.spinner(f"Gerando trabalho com {modelo_escolhido}..."):
+    if st.button("Analisar e Gerar Trabalho", type="primary"):
+        if arquivo_upload is not None and tema_desafio.strip() != "":
+            with st.spinner(f"Lendo o template e resolvendo o caso com {modelo_escolhido}... isso pode levar alguns segundos."):
                 
-                dados_gerados = gerar_conteudo_ia(curso_alvo, modelo_escolhido)
+                # Extrai o texto do Word
+                texto_do_template = extrair_texto_docx(arquivo_upload)
                 
-                if dados_gerados:
-                    arquivo_saida = io.BytesIO()
-                    try:
-                        preencher_template("TEMPLATE_COM_TAGS.docx", arquivo_saida, dados_gerados)
-                        
-                        st.session_state.arquivo_pronto = arquivo_saida.getvalue()
-                        # Substitui espaços por underline para evitar problemas no nome do arquivo baixado
-                        st.session_state.nome_arquivo = f"Desafio_Caroline_{curso_alvo.replace(' ', '_')}.docx"
-                        
-                        st.success("✅ Documento gerado e limpo com sucesso!")
-                    except Exception as e:
-                        st.error(f"Erro ao montar o Word: {e}")
+                # Manda pra IA resolver juntando as duas coisas
+                resposta_ia = gerar_resolucao_inteligente(texto_do_template, tema_desafio, modelo_escolhido)
+                
+                if resposta_ia:
+                    # Salva para exibir na tela e gera o Word de Gabarito
+                    st.session_state.texto_tela = resposta_ia
+                    st.session_state.gabarito_pronto = criar_gabarito_word(resposta_ia)
+                    st.success("✅ Trabalho gerado com sucesso!")
         else:
-            st.warning("⚠️ Digite o nome do curso.")
+            st.warning("⚠️ Por favor, faça o upload do template Word E cole o tema do desafio antes de gerar.")
             
-    if st.session_state.arquivo_pronto is not None:
+    # Mostra o resultado e o botão de download
+    if st.session_state.gabarito_pronto is not None:
         st.download_button(
-            label="⬇️ Baixar Trabalho Pronto (.docx)",
-            data=st.session_state.arquivo_pronto,
-            file_name=st.session_state.nome_arquivo,
+            label="⬇️ Baixar Gabarito em Word (.docx)",
+            data=st.session_state.gabarito_pronto,
+            file_name="Gabarito_Desafio_Profissional.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
+        
+        st.markdown("---")
+        st.subheader("Pré-visualização do Resultado:")
+        st.markdown(st.session_state.texto_tela)
+
 else:
-    st.error("Nenhum modelo compatível encontrado para esta chave API.")
+    st.error("Nenhum modelo compatível encontrado.")
