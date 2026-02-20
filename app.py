@@ -34,39 +34,41 @@ def preencher_template(caminho_template, caminho_saida, dicionario_dados):
     doc.save(caminho_saida)
 # ---------------------------------------------------------
 
+# ---------------------------------------------------------
+# FUNÇÃO DE IA COM O NOVO FILTRO ANTI-CHAVES
+# ---------------------------------------------------------
 def gerar_conteudo_ia(tema_curso, nome_modelo):
     """Gera o conteúdo usando o modelo dinâmico selecionado pelo usuário."""
     
     modelo = genai.GenerativeModel(nome_modelo)
     
+    # PROMPT BLINDADO: Sem chaves nas variáveis para a IA não copiar o padrão
     prompt = f"""
     Atue como um estudante universitário do curso de {tema_curso}.
     Escreva as respostas para o Desafio Profissional focado no 'Caso Caroline' (Assistente que quer virar Analista, focando em Autorresponsabilidade, 10 Pilares da Vida, e Metas SMART).
     As respostas devem ser originais, sem plágio, mas seguindo a linha teórica de Paulo Vieira e Gestão de Carreiras.
     
-    ATENÇÃO MÁXIMA: Retorne APENAS o texto puro e limpo. 
-    - NUNCA coloque o seu texto dentro de chaves {{ }} ou colchetes [ ].
-    - NUNCA use formatação Markdown (como **negrito**, *itálico* ou listas com *).
+    REGRA DE OURO: Retorne APENAS o texto limpo nas respostas. NUNCA use formatação Markdown (como **negrito** ou listas com *).
     
-    Retorne APENAS um objeto JSON válido, contendo exatamente as chaves abaixo com seus respectivos textos gerados. Não adicione markdown como ```json. Apenas as chaves e os textos.
+    Retorne APENAS um objeto JSON válido, contendo exatamente as chaves abaixo (SEM CHAVES DUPLAS). Não adicione markdown como ```json. Apenas as chaves e os textos.
     
     {{
-        "{{ASPECTO_1}}": "texto curto do aspecto 1",
-        "{{POR_QUE_1}}": "justificativa do aspecto 1",
-        "{{ASPECTO_2}}": "texto curto do aspecto 2",
-        "{{POR_QUE_2}}": "justificativa do aspecto 2",
-        "{{ASPECTO_3}}": "texto curto do aspecto 3",
-        "{{POR_QUE_3}}": "justificativa do aspecto 3",
-        "{{CONCEITOS_TEORICOS}}": "Lista comentada de 4 conceitos teóricos (Autorresponsabilidade, 10 Pilares, Estado Atual x Desejado, Metas SMART) com definição curta e como ajudam no caso.",
-        "{{RESP_AUTORRESP}}": "Como a autorresponsabilidade explica o caso...",
-        "{{RESP_PILARES}}": "Como os 10 pilares explicam o caso...",
-        "{{RESP_SOLUCOES}}": "Que soluções o planejamento aponta...",
-        "{{RESUMO_MEMORIAL}}": "Resumo do memorial analítico...",
-        "{{CONTEXTO_MEMORIAL}}": "Contextualização do desafio...",
-        "{{ANALISE_MEMORIAL}}": "Análise usando as teorias...",
-        "{{PROPOSTAS_MEMORIAL}}": "Propostas de solução...",
-        "{{CONCLUSAO_MEMORIAL}}": "Conclusão reflexiva...",
-        "{{AUTOAVALIACAO_MEMORIAL}}": "Autoavaliação do processo de estudo..."
+        "ASPECTO_1": "texto curto do aspecto 1",
+        "POR_QUE_1": "justificativa do aspecto 1",
+        "ASPECTO_2": "texto curto do aspecto 2",
+        "POR_QUE_2": "justificativa do aspecto 2",
+        "ASPECTO_3": "texto curto do aspecto 3",
+        "POR_QUE_3": "justificativa do aspecto 3",
+        "CONCEITOS_TEORICOS": "Lista comentada de 4 conceitos teóricos com definição curta e como ajudam no caso.",
+        "RESP_AUTORRESP": "Como a autorresponsabilidade explica o caso...",
+        "RESP_PILARES": "Como os 10 pilares explicam o caso...",
+        "RESP_SOLUCOES": "Que soluções o planejamento aponta...",
+        "RESUMO_MEMORIAL": "Resumo do memorial analítico...",
+        "CONTEXTO_MEMORIAL": "Contextualização do desafio...",
+        "ANALISE_MEMORIAL": "Análise usando as teorias...",
+        "PROPOSTAS_MEMORIAL": "Propostas de solução...",
+        "CONCLUSAO_MEMORIAL": "Conclusão reflexiva...",
+        "AUTOAVALIACAO_MEMORIAL": "Autoavaliação do processo de estudo..."
     }}
     """
     
@@ -75,12 +77,22 @@ def gerar_conteudo_ia(tema_curso, nome_modelo):
         texto_limpo = resposta.text.strip().replace("```json", "").replace("```", "")
         dicionario_dados = json.loads(texto_limpo)
         
-        # --- FILTRO PYTHON DE LIMPEZA NATIVA (ATUALIZADO) ---
-        # Força a retirada de chaves, colchetes e QUALQUER asterisco do markdown
+        # --- NOVO FILTRO E RECONSTRUÇÃO DE VARIÁVEIS ---
         dicionario_higienizado = {}
-        for chave_marcador, texto_gerado in dicionario_dados.items():
+        for chave, texto_gerado in dicionario_dados.items():
+            
+            # 1. Limpa o texto gerado (o valor) de qualquer sujeira e chaves duplas
             if isinstance(texto_gerado, str):
-                texto_gerado = texto_gerado.replace("{", "").replace("}", "").replace("[", "").replace("]", "").replace("*", "")
+                texto_gerado = texto_gerado.replace("{{", "").replace("}}", "").replace("{", "").replace("}", "").replace("[", "").replace("]", "").replace("*", "").strip()
+            else:
+                texto_gerado = str(texto_gerado)
+                
+            # 2. Limpa a chave original do JSON
+            chave_limpa = chave.replace("{", "").replace("}", "").strip()
+            
+            # 3. Monta o marcador garantindo que terá EXATAMENTE duas chaves.
+            chave_marcador = f"{{{{{chave_limpa}}}}}"
+            
             dicionario_higienizado[chave_marcador] = texto_gerado
             
         return dicionario_higienizado
@@ -126,7 +138,8 @@ if modelos_disponiveis:
                         preencher_template("TEMPLATE_COM_TAGS.docx", arquivo_saida, dados_gerados)
                         
                         st.session_state.arquivo_pronto = arquivo_saida.getvalue()
-                        st.session_state.nome_arquivo = f"Desafio_Caroline_{curso_alvo}.docx"
+                        # Substitui espaços por underline para evitar problemas no nome do arquivo baixado
+                        st.session_state.nome_arquivo = f"Desafio_Caroline_{curso_alvo.replace(' ', '_')}.docx"
                         
                         st.success("✅ Documento gerado e limpo com sucesso!")
                     except Exception as e:
