@@ -44,6 +44,10 @@ def gerar_conteudo_ia(tema_curso, nome_modelo):
     Escreva as respostas para o Desafio Profissional focado no 'Caso Caroline' (Assistente que quer virar Analista, focando em Autorresponsabilidade, 10 Pilares da Vida, e Metas SMART).
     As respostas devem ser originais, sem plágio, mas seguindo a linha teórica de Paulo Vieira e Gestão de Carreiras.
     
+    ATENÇÃO MÁXIMA: Retorne APENAS o texto puro e limpo. 
+    - NUNCA coloque o seu texto dentro de chaves {{ }} ou colchetes [ ].
+    - NUNCA use formatação Markdown (como **negrito**, *itálico* ou listas com *).
+    
     Retorne APENAS um objeto JSON válido, contendo exatamente as chaves abaixo com seus respectivos textos gerados. Não adicione markdown como ```json. Apenas as chaves e os textos.
     
     {{
@@ -71,12 +75,12 @@ def gerar_conteudo_ia(tema_curso, nome_modelo):
         texto_limpo = resposta.text.strip().replace("```json", "").replace("```", "")
         dicionario_dados = json.loads(texto_limpo)
         
-        # --- FILTRO PYTHON DE LIMPEZA NATIVA ---
-        # Força a retirada de qualquer chave/colchete que a IA tenha colocado no texto gerado
+        # --- FILTRO PYTHON DE LIMPEZA NATIVA (ATUALIZADO) ---
+        # Força a retirada de chaves, colchetes e QUALQUER asterisco do markdown
         dicionario_higienizado = {}
         for chave_marcador, texto_gerado in dicionario_dados.items():
             if isinstance(texto_gerado, str):
-                texto_gerado = texto_gerado.replace("{", "").replace("}", "").replace("[", "").replace("]", "")
+                texto_gerado = texto_gerado.replace("{", "").replace("}", "").replace("[", "").replace("]", "").replace("*", "")
             dicionario_higienizado[chave_marcador] = texto_gerado
             
         return dicionario_higienizado
